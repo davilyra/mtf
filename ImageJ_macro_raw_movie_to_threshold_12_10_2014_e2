@@ -1,0 +1,511 @@
+//not sure how to remove error
+//video files MUST contain the word "brightfield" at the end of their name
+
+// Movie_to_binary.txt
+//
+// Last updated 11/05/2014 by Nethika Ariyasinghe
+// First version 02/06/2010
+//
+// Written by Anna Grosberg
+// Disease Biophysics Group
+// SEAS, Harvard University
+// Cambridge, MA 02138
+//
+// This macro is written to analyze the images/movies produced during the hMTF assays.
+
+run("Clear Results");
+base_dir = getDirectory("Choose the direcotry with raw data files:"); //get the directory of the last open file
+File_Titles_Array_temp = getFileList(base_dir); //create a temporary list of files
+Num_files_temp = lengthOf(File_Titles_Array_temp); //number of files in the directory
+Num_files_to_analyze = 0; //initilize the number of films to be analyzed
+File_Titles_Array = newArray(Num_files_temp);
+Base_File_Array = newArray(Num_files_temp); //array for base filenames
+raw_identity = "brightfield.avi"; //this ending identifies the raw data files
+raw_identity_tif = "brightfield.tif"; //this ending identifies the raw data files converted to tif
+tif_logical = 0; // initilize logical variable that will indicate if tifs exist
+thick_logical=0; //initilize logical variable that will indicate if the thickness has already been recorded
+ThickFileName = "frame-rate_PDMS-thick_cell-thick.txt"; //file name for frame rate and thickness info
+//loop through all the files and identify raw data files, save them as tifs
+for (i=0; i<Num_files_temp; i++){
+	temp_file_name = File_Titles_Array_temp[i];
+	//Check if the thickness file exists and set the logical variable
+	if (temp_file_name == ThickFileName){
+		thick_logical = 1;
+	}
+
+	tmpl_e = lengthOf(temp_file_name) ;
+	tmpl_s = tmpl_e - 15;
+	if (tmpl_e > 15)  //if the file is shorter it is not a raw data file
+		raw_temp_id = substring(temp_file_name,tmpl_s,tmpl_e);
+	else
+		raw_temp_id = "no";
+	if (raw_temp_id == raw_identity) {
+		Base_File_Array[Num_files_to_analyze]  = substring(temp_file_name,0,tmpl_s);
+		
+		//print out a condition names file
+		print("\"" + substring(temp_file_name,1,3) + "\"");
+
+		for (j=0; j<Num_files_temp; j++){
+			temp_tif_file_name = File_Titles_Array_temp[j];
+			tmpl_tif_e = lengthOf(temp_tif_file_name) ;
+			tmpl_tif_s = tmpl_tif_e - 15;
+			if (tmpl_tif_e > 15)  //if the file is shorter it is not a raw tif file
+				raw_temp_tif_id = substring(temp_tif_file_name,tmpl_tif_s,tmpl_tif_e);
+			else
+				raw_temp_tif_id = "no";
+			if (raw_temp_tif_id == raw_identity_tif) {
+				if (Base_File_Array[Num_files_to_analyze] == substring(temp_tif_file_name,0,tmpl_tif_s)){
+					tif_logical = 1; //tif file exists --> don't make it again
+					j = Num_files_temp; // exit out of this loop
+				}
+			}
+		}
+		
+		// Record the file names to the array
+		
+		File_Titles_Array[Num_files_to_analyze] = base_dir+substring(temp_file_name,0,(tmpl_e-4))+".tif";
+		if (tif_logical == 0) { // if no tif file exists make the tif file
+			open(base_dir+temp_file_name);			
+			saveAs("tif",File_Titles_Array[Num_files_to_analyze]);
+			close();
+		}
+		Num_files_to_analyze = Num_files_to_analyze+1;
+	}
+}
+
+//Save the condition Names File
+selectWindow("Log"); 
+saveAs("text",base_dir+"ConditionNamesSimple.txt");
+run("Close"); 
+
+//******** If the frame rate and film thicknesses have not been recorded ask for them and save in a file
+if (thick_logical == 0){
+	frame_rate=getNumber("What is the frame rate of ALL of your movies (frames/second)?", 100);
+	PDMS_thick=getNumber("What is the PDMS thickness in microns?", 12.1);
+	Cell_Layer_thick=getNumber("What is the cell layer thickness in microns?", 4.4);
+	print(frame_rate+" "+PDMS_thick+" "+Cell_Layer_thick);
+	selectWindow("Log");
+	saveAs("text",base_dir+ThickFileName);
+	run("Close");
+}
+
+//******** open calibration file get scale and save it to a file
+Dialog.create("Get Scale");
+Dialog.addMessage("Open first frame.");
+Dialog.show();
+open();
+run("Set Scale...", "distance=0 known=0 pixel=1 unit=pixel"); // clear the scale that might have been set previously
+msg_title = "Scale Bar Setting"; 
+msg = "Select 2mm along the length of the film. Click OK when done."; 
+setTool(4);
+waitForUser(msg_title,msg); 
+getSelectionCoordinates(x, y);
+scale = sqrt((x[1]-x[0])*(x[1]-x[0])+(y[1]-y[0])*(y[1]-y[0]))/2;
+ //NA: I changed the number you are dividing by from 1 to 2
+scale_text = "distance="+scale+" known=1 pixel=1 unit=mm";
+close();
+
+	scale_ini = scale;
+	scale_ini_text = "distance="+scale_ini+" known=1 pixel=1 unit=mm";
+
+
+
+	//******** open initial file to measure film lengths
+	Dialog.create("Measure initial film lengths");
+	Dialog.addMessage("Open file with the initial image");
+	Dialog.show();
+	open();
+	film_bot=getNumber("How many films do you have?", 3);
+
+ //This was for the bottom, deleted that part
+	Film_Length_bot = newArray(film_bot);
+	setTool(4);
+	for (j=0; j<film_bot; j++) {
+		msg_title = "Select Film Length";
+		msg = "Select line along length of film #"+(j+1)+" (films # left to right). Click OK when done.";
+		waitForUser(msg_title,msg);
+		getSelectionCoordinates(x,y);
+		Film_Length_bot[j] = sqrt((x[1]-x[0])*(x[1]-x[0])+(y[1]-y[0])*(y[1]-y[0]))*scale/scale_ini;
+		//create/update a file with film lengths in mm and pixels
+		print((sqrt((x[1]-x[0])*(x[1]-x[0])+(y[1]-y[0])*(y[1]-y[0]))/scale_ini)+" "+Film_Length_bot[j]);
+		run("Select None");
+	}
+
+
+	selectWindow("Log");
+	saveAs("text",base_dir+"Film_Lengths.txt");
+	run("Close");
+	//+++ Measure top film lengths
+	//film_top=getNumber("How many films do you have on the top?", 4);
+	//if (film_top>0){
+		//Film_Length_top = newArray(film_top);
+		//setTool(4);
+		//for (j=0; j<film_top; j++) {
+			//msg_title = "Select Film Length";
+			//msg = "Select line along length of film #"+(j+1)+" (films # left to right). Click OK when done.";
+			//waitForUser(msg_title,msg);
+			//getSelectionCoordinates(x,y);
+			//Film_Length_top[j] = sqrt((x[1]-x[0])*(x[1]-x[0])+(y[1]-y[0])*(y[1]-y[0]))*scale/scale_ini;
+			//create/update a file with film lengths in mm and pixels
+			//print((sqrt((x[1]-x[0])*(x[1]-x[0])+(y[1]-y[0])*(y[1]-y[0]))/scale_ini)+" "+Film_Length_top[j]);
+			//run("Select None");
+		//}
+	//}else{
+		//print("0 0");
+      	 //}
+	//selectWindow("Log");
+	//saveAs("text",base_dir+"Film_Lengths_top.txt");
+	//run("Close");
+	//close();
+//}else {
+	//******** open "after" file and calculate film lengths and film placement
+	//Dialog.create("Get Film Lengths")
+	//Dialog.addMessage("Open file with after image");
+	//Dialog.show();
+	//open();
+
+	file_title = getTitle(); // assign file name
+	file_length = lengthOf(file_title)-15;
+	base_file = substring(file_title,0,file_length); // leave only the information portion of the string.
+	//selectWindow(file_title); // make the image be in the current window
+
+	width_im = getWidth();
+ //NA: I just uncommented this
+	height_im = getHeight();
+ //NA: I just uncommented this
+
+	film_bot=getNumber("How many films do you have?", 3);
+//This was for the bottom
+	x_filmb_L = newArray(film_bot);
+	x_filmb_R = newArray(film_bot);
+	y_filmb_T = newArray(film_bot);
+	y_filmb_B = newArray(film_bot);
+	b_minb = newArray(film_bot);
+	b_maxb = newArray(film_bot);
+
+	film_location(x_filmb_L, x_filmb_R, y_filmb_T, y_filmb_B, film_bot);
+
+	FilmLengthBase_temp1 =0;
+
+	for (i=0; i<film_bot; i++){
+		print(x_filmb_L[i]+"  "+x_filmb_R[i]+" "+y_filmb_B[i]);
+		//FilmLengthBase_temp2 = Film_Length_bot[i] + (height_im - y_filmb_B[i]);
+		//Make the top of the film customizable for strecher films
+		b_minb[i] = 0;
+		b_maxb[i]=  y_filmb_T[i];	
+		FilmLengthBase_temp2 = b_maxb[i];
+		FilmLengthBase_max = maxOf(FilmLengthBase_temp1,FilmLengthBase_temp2);
+		FilmLengthBase_temp1 = FilmLengthBase_max;
+	}
+
+	BottomFilmTopEdgeLoc = FilmLengthBase_max;
+	
+	selectWindow("Log");
+	saveAs("text",base_dir+"hmtf_film_locations.txt"); //REMOVED THE WORD BOTTOM
+	run("Close");
+
+
+	//create/update a file with film lengths in mm and pixels
+	for (i=0; i<film_bot; i++){		
+		print(Film_Length_bot[i]/scale+" "+Film_Length_bot[i]);
+	}
+	selectWindow("Log");
+	saveAs("text",base_dir+"Film_Lengths.txt"); //REMOVED THE WORD BOTTOM
+	run("Close");
+
+
+open(File_Titles_Array[0]); //open first movie stack
+file_title = getTitle(); // assign file name
+file_length = lengthOf(file_title)-15;
+base_file = Base_File_Array[0]; // leave only the information portion of the string.
+selectWindow(file_title); // make the image be in the current window
+
+
+// +++++++++ save RGB file with scale bars
+msg_title = "Scale Bar";
+msg = "Select a place for a scale bar (1 mm). Click OK when done.";
+setTool(4);
+waitForUser(msg_title,msg);
+getSelectionCoordinates(x_bottom_cal,y_bottom_cal);
+save_raw_rgb(scale_text, base_file, x_bottom_cal, y_bottom_cal, base_dir);
+
+
+//run("Select None");
+
+//save the selection coordinates
+save_sel(base_file); 
+width_im = getWidth();
+height_im = getHeight();
+
+
+// *************************************** Draw black rectangles in between films ***********************
+black_between(film_bot, x_filmb_L, x_filmb_R, height_im, width_im,b_minb,b_maxb);
+
+//*********************** Run threshold tool and make binary ********************************
+binary_logical_repeat = 1; //initilize the binary logical variable - the code will cycle through the threshold/binary portions until/unless the user is happy
+
+while (binary_logical_repeat == 1) {
+	raw_window_name = base_file+"_raw.tif"; // name of the original raw window
+	selectWindow(raw_window_name); //select the original raw window
+	//create a duplicate of the raw image in case user messes up with the threshold
+	name_duplicate = base_file+"_raw_duplicate.tif"; //name of the duplicate window
+	type_duplicate = "title="+name_duplicate+" duplicate"; //duplicate window command text
+	run("Duplicate...", type_duplicate); //duplicate the raw window
+	selectWindow(raw_window_name); //select the original raw window
+
+	msg_title = "Threshold Image";
+
+	msg = "Adjust so that top of films make continuous line. Click OK";
+
+	run("Threshold...");
+	waitForUser(msg_title,msg);
+
+	getThreshold(thresh_lower_bottom, thresh_upper_bottom);
+
+	threshold_binary(thresh_lower_bottom, thresh_upper_bottom);
+	selectWindow("Threshold");
+	run("Close");
+
+	// *************************************** Draw black rectangles at the edge and bottom of each film ***********************
+	// *************************************** Fill holes, set options, erode, dilate				 ***********************
+	erode_iter=getNumber("For how many iterations to you want to erode the film?", 3);
+	y_cor = 0.95*BottomFilmTopEdgeLoc;
+	clean_up_films1(film_bot, y_cor, x_filmb_L, x_filmb_R,height_im,erode_iter);
+
+	//***************************************** Ask the user to check the image and save **********************************
+	check_save_clean(base_dir, base_file);
+	
+
+	//****************************************Ask the user if they want to redo the thresholding and cleaning ****************************
+	binary_logical_repeat = getBoolean("Would you like to redo the thresholding and eroding?");
+	selectWindow(name_duplicate); //select the duplicate raw window
+	rename(raw_window_name); //rename to the original raw name
+}
+close();
+//&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+//&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&   	        Another Film              &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+//&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+setBatchMode(true);
+for (file_num=1; file_num<Num_files_to_analyze; file_num++){
+	open(File_Titles_Array[file_num]); //open first movie stack
+	file_title = getTitle(); // assign file name
+	file_length = lengthOf(file_title)-15;
+	base_file = Base_File_Array[file_num]; // leave only the information portion of the string.
+	selectWindow(file_title); // make the image be in the current window
+	save_raw_rgb(scale_text, base_file, x_bottom_cal, y_bottom_cal, base_dir);
+
+	save_sel(base_file);
+	run("Select None");
+
+	
+	black_between(film_bot, x_filmb_L, x_filmb_R, height_im, width_im,b_minb,b_maxb);
+	threshold_binary(thresh_lower_bottom, thresh_upper_bottom);
+	y_cor = 0.9*BottomFilmTopEdgeLoc;
+	clean_up_films(film_bot, y_cor, x_filmb_L, x_filmb_R,height_im,erode_iter);
+	save_clean(base_dir, base_file);
+
+	//if (film_top >0){
+		//&&&&&&&&&&&&&&&&&&&&& START TOP PORTION &&&&&&&&&&&&&&&&&&&&&&&&&&&
+		//selectWindow(file_title); // make the image be in the current window
+		//save_sel(base_file,"top");
+		//run("Select None");
+
+		//black_between(film_top, x_filmt_L, x_filmt_R, height_im, width_im,b_mint,b_maxt);
+		//threshold_binary(thresh_lower_top, thresh_upper_top);
+		//y_cor = 1.1*TopFilmBottomjEdgeLoc;
+		//clean_up_films(film_top, y_cor, x_filmt_L, x_filmt_R,0,erode_iter);
+		//save_clean(base_dir, base_file,"top");
+		//close();
+	//}else{
+	//close();}
+}
+print(scale+" "+film_bot);//deleted '+" "+film_top'
+selectWindow("Log");
+saveAs("text",base_dir+"hmtf-scale-pixels-per-mm_bot_filmnum_top_filmnum.txt");
+run("Close"); 
+setBatchMode("exit and display");
+
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[	FUNCTION	]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+// *************************************** crop and save the raw file **************************************************************************
+function crop_save_sel(base_file, x_sel, y_sel, bottop){
+	makeSelection("polygon",  x_sel, y_sel);
+	type_raw = "title="+base_file+bottop+"_raw.tif"+" duplicate";
+	run("Duplicate...", type_raw);
+	saveAs("tif",base_dir+getTitle());
+}
+// *************************************** crop the raw file **************************************************************************
+function crop_sel(base_file, x_sel, y_sel, bottop){
+	makeSelection("polygon",  x_sel, y_sel);
+	type_raw = "title="+base_file+bottop+"_raw.tif"+" duplicate";
+	run("Duplicate...", type_raw);
+}
+// *************************************** crop, rotate and save the raw file **************************************************************************
+function crop_rotate_sel(base_file, x_sel, y_sel, bottop){
+	makeSelection("polygon",  x_sel, y_sel);
+	type_raw = "title="+base_file+bottop+"_raw.tif"+" duplicate";
+	run("Duplicate...", type_raw);
+	run("Arbitrarily...", "angle=180 grid=1 stack");
+}
+// *************************************** brighten and save the raw file **************************************************************************
+function bright_save_sel(base_file, min_bc, max_bc){
+	setMinAndMax(min_bc, max_bc);
+	saveAs("tif",base_dir+getTitle());
+}
+// *************************************** crop and save the raw file **************************************************************************
+function save_sel(base_file){
+	run("Select None");
+	type_raw = "title="+base_file+"_raw.tif"+" duplicate";
+	run("Duplicate...", type_raw);
+	saveAs("tif",base_dir+getTitle());
+}
+
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[	FUNCTION	]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+// *************************************** Draw black rectangles at the edge and bottom of each film ***********************
+// *************************************** Fill holes, set options, erode, dilate				 ***********************
+
+function clean_up_films1(film_count,y_cor, x_film_L, x_film_R,height_im,erode_iter){
+	width = 4;
+	for (i=0; i<film_count; i++){
+		height = height_im - y_cor;
+		run("Colors...", "foreground=black background=white selection=yellow");
+		makeRectangle(x_film_L[i], minOf(height_im,y_cor), width, abs(height));
+		run("Fill", "stack");
+		makeRectangle((x_film_R[i]-width), minOf(height_im,y_cor), width, abs(height));
+		run("Fill", "stack");
+		makeRectangle(x_film_L[i], maxOf(0,(height_im-width)),(x_film_R[i]-x_film_L[i]), width);
+		run("Fill", "stack");
+	}
+	run("Select None");
+	setThreshold(10, 255, "black & white");
+    	run("Make Binary", " thresholded remaining black");
+	run("Options...", "iterations="+erode_iter+" count=1 edm=Overwrite do=Nothing");
+	run("Fill Holes", "stack");
+	NumSlices = nSlices(); //get the total number of slices
+	for (slice = 1; slice<NumSlices+1; slice++){
+		setSlice(slice);
+		run("Fill Holes", "slice");
+	}
+	msg_title = "Fill holes";
+	msg = "Double check that all films are solid, THEN press OK";
+	waitForUser(msg_title,msg);
+	//run("Erode", "stack");
+	//run("Options...", "iterations="+erode_iter+" count=1 pad edm=Overwrite do=Erode stack");
+	//run("Dilate", "stack");
+	//run("Options...", "iterations="+erode_iter+" count=1 pad edm=Overwrite do=Dilate stack");
+	for (slice = 1; slice<NumSlices+1; slice++){
+		setSlice(slice);
+		run("Options...", "iterations="+erode_iter+" count=1 pad edm=Overwrite do=Erode slice");
+		run("Options...", "iterations="+erode_iter+" count=1 pad edm=Overwrite do=Dilate slice");
+	}
+}
+
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[	FUNCTION	]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+// *************************************** Draw black rectangles at the edge and bottom of each film ***********************
+// *************************************** Fill holes, set options, erode, dilate				 ***********************
+
+function clean_up_films(film_count,y_cor, x_film_L, x_film_R,height_im,erode_iter){
+	width = 4;
+	for (i=0; i<film_count; i++){
+		height = height_im - y_cor;
+		run("Colors...", "foreground=black background=white selection=yellow");
+		makeRectangle(x_film_L[i], minOf(height_im,y_cor), width, abs(height));
+		run("Fill", "stack");
+		makeRectangle((x_film_R[i]-width), minOf(height_im,y_cor), width, abs(height));
+		run("Fill", "stack");
+		makeRectangle(x_film_L[i], maxOf(0,(height_im-width)),(x_film_R[i]-x_film_L[i]), width);
+		run("Fill", "stack");
+	}
+	run("Select None");
+	setThreshold(10, 255, "black & white");
+    	run("Make Binary", " thresholded remaining black");
+	run("Options...", "iterations="+erode_iter+" count=1 edm=Overwrite do=Nothing");
+	run("Fill Holes", "stack");
+	NumSlices = nSlices(); //get the total number of slices
+	for (slice = 1; slice<NumSlices+1; slice++){
+		setSlice(slice);
+		run("Fill Holes", "slice");
+	}
+	for (slice = 1; slice<NumSlices+1; slice++){
+		setSlice(slice);
+		run("Options...", "iterations="+erode_iter+" count=1 pad edm=Overwrite do=Erode slice");
+		run("Options...", "iterations="+erode_iter+" count=1 pad edm=Overwrite do=Dilate slice");
+	}
+}
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[	FUNCTION	]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+//***************************************** Ask the user to check the clean image and save **********************************
+function check_save_clean(base_dir, base_file){ //NA: REMOVED VARIABLE
+	msg_title = "Clean Image";
+	msg = "Double check that the clean image is good. THEN click OK";
+	waitForUser(msg_title,msg);
+	flname = base_dir+base_file+"_clean";
+	saveAs("tif",flname);
+	close();
+}
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[	FUNCTION	]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+//***************************************** save the clean image **********************************
+function save_clean(base_dir, base_file){ //NA: REMOVED VARIABLE
+	flname = base_dir+base_file+"_clean";
+	saveAs("tif",flname);
+	close();
+}
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[	FUNCTION	]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+// *************************************** Draw black rectangles in between films ***********************
+function black_between(film_count, x_film_L, x_film_R, height_im, width_im,b_min,b_max){
+
+	run("Colors...", "foreground=black background=black selection=yellow");
+	for (i=0; i<(film_count-1); i++){
+		width = x_film_L[i+1] - x_film_R[i];
+		makeRectangle(x_film_R[i], 0, width, height_im);
+		run("Fill", "stack");	
+		width = x_film_R[i] - x_film_L[i]+2;
+		makeRectangle(x_film_L[i], b_min[i], width, b_max[i]);
+		run("Fill", "stack");		
+	}
+	width = x_film_L[0];
+	makeRectangle(0, 0, width, height_im);
+	run("Fill", "stack");
+	width = width_im - x_film_R[film_count-1];
+	makeRectangle(x_film_R[film_count-1], 0, width, height_im);
+	run("Fill", "stack");
+	width = x_film_R[film_count-1] - x_film_L[film_count-1]+2;
+	makeRectangle(x_film_L[film_count-1], b_min[film_count-1], width, b_max[film_count-1]);
+	run("Fill", "stack");	
+	run("Select None");
+}
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[	FUNCTION	]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+// ++++++++++++++ Make the RGB image and label it with a scale bar +++++++++++++
+function save_raw_rgb(scale_text, base_file, x_cal, y_cal, base_dir){
+	run("Set Scale...", scale_text);
+	type_raw_rgb = "title="+base_file+"raw_RGB.tif"+" duplicate";
+	run("Duplicate...", type_raw_rgb);
+	run("RGB Color");
+	makeLine(x_cal[0], y_cal[0], x_cal[1], y_cal[1]);
+	run("Scale Bar...", "width=1 height=4 font=20 color=White background=None location=[At Selection] bold label");
+	rgb_file_nm = base_file+"raw_RGB.tif";
+	saveAs("tif",base_dir+rgb_file_nm); //save RGB image
+	close();
+}
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[	FUNCTION	]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+// *************************************** Threshold the image and make it binary
+function threshold_binary(thresh_lower, thresh_upper){
+    setThreshold(thresh_lower, thresh_upper, "black & white");
+    run("Convert to Mask", " ");
+    setThreshold(255, 255);
+    run("Make Binary", " thresholded remaining black");
+}
+//[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[      FUNCTION            ][]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+//*************************************** Film locations - note that arrays are passed by reference so changing an array in a function changes it in memory
+function film_location(x_film_L, x_film_R, y_film_T, y_film_B, film_num){
+	setTool(0);
+	for (j=0; j<film_num; j++) {
+		run("Select None");
+		msg_title = "Select Film";
+		msg = "Select film #"+(j+1)+" (left to right). \n Make sure the horizontal edge of the \n rectangle lines up with the base of the film. \n Everything will be masked above (bottom) your selection. \n Click OK when done.";
+		waitForUser(msg_title,msg);
+		getSelectionCoordinates(x_film,y_film);
+		x_film_L[j] = x_film[0];
+		x_film_R[j] = x_film[1];
+		y_film_T[j] = y_film[0];
+		y_film_B[j] = y_film[2];
+	}
+}
